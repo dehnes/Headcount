@@ -20,13 +20,11 @@ def add_job(job: Job) -> None:
 
 def get_all_jobs() -> list[Job]:
     with get_connection() as connection:
-        rows = connection.execute(
-            """
+        rows = connection.execute("""
             SELECT code, name
             FROM job
             ORDER BY name
-            """
-        ).fetchall()
+            """).fetchall()
 
     return [
         Job(

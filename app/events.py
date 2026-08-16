@@ -96,26 +96,20 @@ def add_event(event: PersonEvent) -> int:
         # -----------------------------------------------------
         # 4. Load master data
         # -----------------------------------------------------
-        job_rows = connection.execute(
-            """
+        job_rows = connection.execute("""
             SELECT code, name
             FROM job
-            """
-        ).fetchall()
+            """).fetchall()
 
-        location_rows = connection.execute(
-            """
+        location_rows = connection.execute("""
             SELECT code, name
             FROM location
-            """
-        ).fetchall()
+            """).fetchall()
 
-        department_rows = connection.execute(
-            """
+        department_rows = connection.execute("""
             SELECT siglum, name, parent_siglum
             FROM department
-            """
-        ).fetchall()
+            """).fetchall()
 
         # -----------------------------------------------------
         # 5. Convert master data to domain objects
@@ -436,32 +430,26 @@ def _load_person_context(
         # ---------------------------------------------------------
         # Jobs
         # ---------------------------------------------------------
-        job_rows = connection.execute(
-            """
+        job_rows = connection.execute("""
             SELECT code, name
             FROM job
-            """
-        ).fetchall()
+            """).fetchall()
 
         # ---------------------------------------------------------
         # Locations
         # ---------------------------------------------------------
-        location_rows = connection.execute(
-            """
+        location_rows = connection.execute("""
             SELECT code, name
             FROM location
-            """
-        ).fetchall()
+            """).fetchall()
 
         # ---------------------------------------------------------
         # Departments
         # ---------------------------------------------------------
-        department_rows = connection.execute(
-            """
+        department_rows = connection.execute("""
             SELECT siglum, name, parent_siglum
             FROM department
-            """
-        ).fetchall()
+            """).fetchall()
 
     # -------------------------------------------------------------
     # Events in Python objects

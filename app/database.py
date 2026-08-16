@@ -17,36 +17,29 @@ def get_connection() -> sqlite3.Connection:
 
 def initialize_database() -> None:
     with get_connection() as connection:
-        connection.execute(
-            """
+        connection.execute("""
             CREATE TABLE IF NOT EXISTS person (
                 corp_id TEXT PRIMARY KEY,
                 first_name TEXT NOT NULL,
                 last_name TEXT NOT NULL
             )
-            """
-        )
+            """)
 
-        connection.execute(
-            """
+        connection.execute("""
             CREATE TABLE IF NOT EXISTS job (
                 code TEXT PRIMARY KEY,
                 name TEXT NOT NULL
             )
-            """
-        )
+            """)
 
-        connection.execute(
-            """
+        connection.execute("""
             CREATE TABLE IF NOT EXISTS location (
                 code TEXT PRIMARY KEY,
                 name TEXT NOT NULL
             )
-            """
-        )
+            """)
 
-        connection.execute(
-            """
+        connection.execute("""
             CREATE TABLE IF NOT EXISTS department (
                 siglum TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
@@ -54,11 +47,9 @@ def initialize_database() -> None:
                 FOREIGN KEY (parent_siglum)
                     REFERENCES department (siglum)
             )
-            """
-        )
+            """)
 
-        connection.execute(
-            """
+        connection.execute("""
             CREATE TABLE IF NOT EXISTS person_event (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 corp_id TEXT NOT NULL,
@@ -84,7 +75,6 @@ def initialize_database() -> None:
                 FOREIGN KEY (department_siglum)
                     REFERENCES department (siglum)
             )
-            """
-        )
+            """)
 
         connection.commit()

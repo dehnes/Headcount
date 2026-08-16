@@ -65,20 +65,16 @@ def get_workforce(
 ) -> WorkforceMetrics:
 
     with get_connection() as connection:
-        person_rows = connection.execute(
-            """
+        person_rows = connection.execute("""
             SELECT corp_id
             FROM person
             ORDER BY corp_id
-            """
-        ).fetchall()
+            """).fetchall()
 
-        department_rows = connection.execute(
-            """
+        department_rows = connection.execute("""
             SELECT siglum, name, parent_siglum
             FROM department
-            """
-        ).fetchall()
+            """).fetchall()
 
     departments = {
         row["siglum"]: Department(
@@ -145,13 +141,11 @@ def get_workforce_trend(
 
     # Alle Personen laden
     with get_connection() as connection:
-        person_rows = connection.execute(
-            """
+        person_rows = connection.execute("""
             SELECT corp_id
             FROM person
             ORDER BY corp_id
-            """
-        ).fetchall()
+            """).fetchall()
 
         event_rows = connection.execute(
             """
@@ -245,13 +239,11 @@ def get_workforce_by_department(
 ) -> dict[str, WorkforceMetrics]:
 
     with get_connection() as connection:
-        department_rows = connection.execute(
-            """
+        department_rows = connection.execute("""
             SELECT siglum
             FROM department
             ORDER BY siglum
-            """
-        ).fetchall()
+            """).fetchall()
 
     result = {
         row["siglum"]: WorkforceMetrics(
@@ -262,13 +254,11 @@ def get_workforce_by_department(
     }
 
     with get_connection() as connection:
-        person_rows = connection.execute(
-            """
+        person_rows = connection.execute("""
             SELECT corp_id
             FROM person
             ORDER BY corp_id
-            """
-        ).fetchall()
+            """).fetchall()
 
     for person_row in person_rows:
         state = get_person_state(
@@ -308,21 +298,17 @@ def get_workforce_by_department_tree(
 ) -> dict[str, WorkforceMetrics]:
 
     with get_connection() as connection:
-        department_rows = connection.execute(
-            """
+        department_rows = connection.execute("""
             SELECT siglum, name, parent_siglum
             FROM department
             ORDER BY siglum
-            """
-        ).fetchall()
+            """).fetchall()
 
-        person_rows = connection.execute(
-            """
+        person_rows = connection.execute("""
             SELECT corp_id
             FROM person
             ORDER BY corp_id
-            """
-        ).fetchall()
+            """).fetchall()
 
     departments = {
         row["siglum"]: Department(
@@ -569,15 +555,13 @@ def get_workforce_movement_summary(
 
     if department_siglum is not None:
         with get_connection() as connection:
-            department_rows = connection.execute(
-                """
+            department_rows = connection.execute("""
                 SELECT
                     siglum,
                     name,
                     parent_siglum
                 FROM department
-                """
-            ).fetchall()
+                """).fetchall()
 
         departments = {
             row["siglum"]: Department(

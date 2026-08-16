@@ -20,13 +20,11 @@ def add_location(location: Location) -> None:
 
 def get_all_locations() -> list[Location]:
     with get_connection() as connection:
-        rows = connection.execute(
-            """
+        rows = connection.execute("""
             SELECT code, name
             FROM location
             ORDER BY name
-            """
-        ).fetchall()
+            """).fetchall()
 
     return [
         Location(

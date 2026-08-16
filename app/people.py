@@ -21,13 +21,11 @@ def add_person(person: Person) -> None:
 
 def get_all_people() -> list[Person]:
     with get_connection() as connection:
-        rows = connection.execute(
-            """
+        rows = connection.execute("""
             SELECT corp_id, first_name, last_name
             FROM person
             ORDER BY last_name, first_name
-            """
-        ).fetchall()
+            """).fetchall()
 
     return [
         Person(
@@ -105,12 +103,10 @@ def get_department(siglum: str) -> Department | None:
 
 def get_all_corp_ids() -> list[str]:
     with get_connection() as connection:
-        rows = connection.execute(
-            """
+        rows = connection.execute("""
             SELECT corp_id
             FROM person
             ORDER BY corp_id
-            """
-        ).fetchall()
+            """).fetchall()
 
     return [row["corp_id"] for row in rows]
