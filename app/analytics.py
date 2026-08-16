@@ -518,3 +518,259 @@ def get_workforce_movements(
         )
 
     return movements
+
+
+@dataclass
+class WorkforceMovementSummary:
+    joins_headcount: int = 0
+    joins_fte: float = 0.0
+
+    exits_headcount: int = 0
+    exits_fte: float = 0.0
+
+    transfers_in_headcount: int = 0
+    transfers_in_fte: float = 0.0
+
+    transfers_out_headcount: int = 0
+    transfers_out_fte: float = 0.0
+
+    location_changes_in_headcount: int = 0
+    location_changes_in_fte: float = 0.0
+
+    location_changes_out_headcount: int = 0
+    location_changes_out_fte: float = 0.0
+
+    job_changes_headcount: int = 0
+    job_changes_fte: float = 0.0
+
+    fte_changes_headcount: int = 0
+    fte_changes_fte: float = 0.0
+
+
+def get_workforce_movement_summary(
+    from_date: date,
+    to_date: date,
+    *,
+    location_code: str | None = None,
+    department_siglum: str | None = None,
+    job_code: str | None = None,
+) -> WorkforceMovementSummary:
+
+    movements = get_workforce_movements(
+        from_date,
+        to_date,
+    )
+
+    # ---------------------------------------------------------
+    # Department hierarchy
+    # ---------------------------------------------------------
+
+    departments: dict[str, Department] = {}
+
+    if department_siglum is not None:
+        with get_connection() as connection:
+            department_rows = connection.execute(
+                """
+                SELECT
+                    siglum,
+                    name,
+                    parent_siglum
+                FROM department
+                """
+            ).fetchall()
+
+        departments = {
+            row["siglum"]: Department(
+                siglum=row["siglum"],
+                name=row["name"],
+                parent_siglum=row["parent_siglum"],
+            )
+            for row in department_rows
+        }
+
+        department_tree = get_department_tree(
+            departments,
+            department_siglum,
+        )
+
+    else:
+        department_tree = None
+
+    result = WorkforceMovementSummary()
+
+    for movement in movements:
+        # -----------------------------------------------------
+        # JOIN
+        # -----------------------------------------------------
+
+        if movement.event_type == EventType.JOIN:
+            if location_code is not None and (
+                movement.new_location_code != location_code
+            ):
+                continue
+
+            if department_tree is not None and (
+                movement.new_department_siglum not in department_tree
+            ):
+                continue
+
+            if job_code is not None and (movement.new_job_code != job_code):
+                continue
+
+            result.joins_headcount += 1
+            result.joins_fte += movement.new_fte or 0.0
+
+        # -----------------------------------------------------
+        # EXIT
+        # -----------------------------------------------------
+
+        elif movement.event_type == EventType.EXIT:
+            if location_code is not None and (
+                movement.previous_location_code != location_code
+            ):
+                continue
+
+            if department_tree is not None and (
+                movement.previous_department_siglum not in department_tree
+            ):
+                continue
+
+            if job_code is not None and (movement.previous_job_code != job_code):
+                continue
+
+            result.exits_headcount += 1
+            result.exits_fte += movement.previous_fte or 0.0
+
+        # -----------------------------------------------------
+        # TRANSFER
+        # -----------------------------------------------------
+
+        elif movement.event_type == EventType.TRANSFER:
+            matches_previous = True
+            matches_new = True
+
+            # OUT: Zustand vor dem Transfer
+            if location_code is not None:
+                matches_previous = movement.previous_location_code == location_code
+
+            if department_tree is not None:
+                matches_previous = matches_previous and (
+                    movement.previous_department_siglum in department_tree
+                )
+
+            if job_code is not None:
+                matches_previous = matches_previous and (
+                    movement.previous_job_code == job_code
+                )
+
+            if matches_previous:
+                result.transfers_out_headcount += 1
+                result.transfers_out_fte += movement.previous_fte or 0.0
+
+            # IN: Zustand nach dem Transfer
+            if location_code is not None:
+                matches_new = movement.new_location_code == location_code
+
+            if department_tree is not None:
+                matches_new = matches_new and (
+                    movement.new_department_siglum in department_tree
+                )
+
+            if job_code is not None:
+                matches_new = matches_new and (movement.new_job_code == job_code)
+
+            if matches_new:
+                result.transfers_in_headcount += 1
+                result.transfers_in_fte += movement.new_fte or 0.0
+
+        # -----------------------------------------------------
+        # LOCATION CHANGE
+        # -----------------------------------------------------
+
+        elif movement.event_type == EventType.LOCATION_CHANGE:
+            matches_previous = True
+            matches_new = True
+
+            # OUT
+            if location_code is not None:
+                matches_previous = movement.previous_location_code == location_code
+
+            if department_tree is not None:
+                matches_previous = matches_previous and (
+                    movement.previous_department_siglum in department_tree
+                )
+
+            if job_code is not None:
+                matches_previous = matches_previous and (
+                    movement.previous_job_code == job_code
+                )
+
+            if matches_previous:
+                result.location_changes_out_headcount += 1
+                result.location_changes_out_fte += movement.previous_fte or 0.0
+
+            # IN
+            if location_code is not None:
+                matches_new = movement.new_location_code == location_code
+
+            if department_tree is not None:
+                matches_new = matches_new and (
+                    movement.new_department_siglum in department_tree
+                )
+
+            if job_code is not None:
+                matches_new = matches_new and (movement.new_job_code == job_code)
+
+            if matches_new:
+                result.location_changes_in_headcount += 1
+                result.location_changes_in_fte += movement.new_fte or 0.0
+
+        # -----------------------------------------------------
+        # JOB CHANGE
+        # -----------------------------------------------------
+
+        elif movement.event_type == EventType.JOB_CHANGE:
+            if location_code is not None and (
+                movement.previous_location_code != location_code
+            ):
+                continue
+
+            if department_tree is not None and (
+                movement.previous_department_siglum not in department_tree
+            ):
+                continue
+
+            if job_code is not None and not (
+                movement.previous_job_code == job_code
+                or movement.new_job_code == job_code
+            ):
+                continue
+
+            result.job_changes_headcount += 1
+            result.job_changes_fte += movement.previous_fte or 0.0
+
+        # -----------------------------------------------------
+        # FTE CHANGE
+        # -----------------------------------------------------
+
+        elif movement.event_type == EventType.FTE_CHANGE:
+            if location_code is not None and (
+                movement.new_location_code != location_code
+            ):
+                continue
+
+            if department_tree is not None and (
+                movement.new_department_siglum not in department_tree
+            ):
+                continue
+
+            if job_code is not None and (movement.new_job_code != job_code):
+                continue
+
+            result.fte_changes_headcount += 1
+
+            result.fte_changes_fte += (movement.new_fte or 0.0) - (
+                movement.previous_fte or 0.0
+            )
+
+    return result

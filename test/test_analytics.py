@@ -1,5 +1,7 @@
 from datetime import date
 
+import pytest
+
 from app.analytics import (
     WorkforcePoint,
     WorkforceSnapshot,
@@ -9,6 +11,7 @@ from app.analytics import (
     get_workforce_by_department,
     get_workforce_by_department_tree,
     get_workforce_history,
+    get_workforce_movement_summary,
     get_workforce_movements,
     get_workforce_trend,
 )
@@ -1450,3 +1453,696 @@ def test_workforce_movement_contains_previous_and_new_job(
     assert movement.new_location_code == "HAM"
     assert movement.new_department_siglum == "ASOSB"
     assert movement.new_fte == 1.0
+
+
+def test_get_workforce_movement_summary(test_database):
+    with get_connection() as connection:
+        connection.execute(
+            """
+            INSERT INTO person (
+                corp_id,
+                first_name,
+                last_name
+            )
+            VALUES (?, ?, ?)
+            """,
+            ("D10001", "Max", "Mustermann"),
+        )
+        connection.execute(
+            """
+    INSERT INTO person (
+        corp_id,
+        first_name,
+        last_name
+    )
+    VALUES (?, ?, ?)
+    """,
+            ("D10003", "Peter", "Muster"),
+        )
+
+        connection.execute(
+            """
+            INSERT INTO person (
+                corp_id,
+                first_name,
+                last_name
+            )
+            VALUES (?, ?, ?)
+            """,
+            ("D10002", "Anna", "Musterfrau"),
+        )
+
+    # Max: JOIN mit 1.0 FTE
+
+    add_event(
+        PersonEvent(
+            id=None,
+            corp_id="D10001",
+            effective_date=date(2023, 1, 1),
+            event_type=EventType.JOIN,
+            job_code="JOB_A",
+            location_code="HAM",
+            department_siglum="ASOSB",
+            employment_status=EmploymentStatus.PERMANENT,
+            fte=1.0,
+        )
+    )
+
+    # Anna: JOIN mit 0.8 FTE
+
+    add_event(
+        PersonEvent(
+            id=None,
+            corp_id="D10002",
+            effective_date=date(2023, 2, 1),
+            event_type=EventType.JOIN,
+            job_code="JOB_A",
+            location_code="HAM",
+            department_siglum="ASOSB",
+            employment_status=EmploymentStatus.PERMANENT,
+            fte=0.8,
+        )
+    )
+
+    # Anna verlässt das Unternehmen mit 0.8 FTE
+
+    add_event(
+        PersonEvent(
+            id=None,
+            corp_id="D10002",
+            effective_date=date(2023, 10, 1),
+            event_type=EventType.EXIT,
+        )
+    )
+
+    add_event(
+        PersonEvent(
+            id=None,
+            corp_id="D10003",
+            effective_date=date(2023, 1, 1),
+            event_type=EventType.JOIN,
+            job_code="JOB_A",
+            location_code="HAM",
+            department_siglum="ASOSB",
+            employment_status=EmploymentStatus.PERMANENT,
+            fte=0.5,
+        )
+    )
+
+    add_event(
+        PersonEvent(
+            id=None,
+            corp_id="D10003",
+            effective_date=date(2023, 6, 1),
+            event_type=EventType.TRANSFER,
+            department_siglum="ASOSBS",
+        )
+    )
+
+    result = get_workforce_movement_summary(
+        from_date=date(2023, 1, 1),
+        to_date=date(2023, 12, 31),
+    )
+
+    assert result.joins_headcount == 3
+    assert result.joins_fte == 2.3
+
+    assert result.exits_headcount == 1
+    assert result.exits_fte == 0.8
+
+    assert result.transfers_out_headcount == 1
+    assert result.transfers_out_fte == 0.5
+
+    assert result.transfers_in_headcount == 1
+    assert result.transfers_in_fte == 0.5
+
+    assert result.location_changes_out_headcount == 0
+    assert result.location_changes_out_fte == 0.0
+
+    assert result.location_changes_in_headcount == 0
+    assert result.location_changes_in_fte == 0.0
+
+    assert result.job_changes_headcount == 0
+    assert result.job_changes_fte == 0.0
+
+    assert result.fte_changes_headcount == 0
+
+
+def test_workforce_movement_summary_location_filter(
+    test_database,
+):
+    with get_connection() as connection:
+        connection.execute(
+            """
+            INSERT INTO person (
+                corp_id,
+                first_name,
+                last_name
+            )
+            VALUES (?, ?, ?)
+            """,
+            ("D10004", "Peter", "Muster"),
+        )
+        connection.execute(
+            """
+        INSERT INTO location (
+            code,
+            name
+        )
+        VALUES (?, ?)
+        """,
+            ("FRA", "Frankfurt"),
+        )
+    add_event(
+        PersonEvent(
+            id=None,
+            corp_id="D10004",
+            effective_date=date(2022, 1, 1),
+            event_type=EventType.JOIN,
+            job_code="JOB_A",
+            location_code="HAM",
+            department_siglum="ASOSB",
+            employment_status=EmploymentStatus.PERMANENT,
+            fte=1.0,
+        )
+    )
+
+    add_event(
+        PersonEvent(
+            id=None,
+            corp_id="D10004",
+            effective_date=date(2023, 1, 1),
+            event_type=EventType.LOCATION_CHANGE,
+            location_code="FRA",
+        )
+    )
+
+    # ---------------------------------------------------------
+    # Hamburg: Person verlässt den Standort
+    # ---------------------------------------------------------
+
+    result_ham = get_workforce_movement_summary(
+        from_date=date(2023, 1, 1),
+        to_date=date(2023, 12, 31),
+        location_code="HAM",
+    )
+
+    assert result_ham.location_changes_out_headcount == 1
+    assert result_ham.location_changes_out_fte == 1.0
+
+    assert result_ham.location_changes_in_headcount == 0
+    assert result_ham.location_changes_in_fte == 0.0
+
+    # ---------------------------------------------------------
+    # Frankfurt: Person kommt an den Standort
+    # ---------------------------------------------------------
+
+    result_fra = get_workforce_movement_summary(
+        from_date=date(2023, 1, 1),
+        to_date=date(2023, 12, 31),
+        location_code="FRA",
+    )
+
+    assert result_fra.location_changes_out_headcount == 0
+    assert result_fra.location_changes_out_fte == 0.0
+
+    assert result_fra.location_changes_in_headcount == 1
+    assert result_fra.location_changes_in_fte == 1.0
+
+
+def test_workforce_movement_summary_department_filter_includes_children(
+    test_database,
+):
+    with get_connection() as connection:
+        connection.execute(
+            """
+            INSERT INTO person (
+                corp_id,
+                first_name,
+                last_name
+            )
+            VALUES (?, ?, ?)
+            """,
+            ("D10005", "Peter", "Muster"),
+        )
+        connection.execute(
+            """
+    INSERT INTO department (
+        siglum,
+        name,
+        parent_siglum
+    )
+    VALUES (?, ?, ?)
+    """,
+            (
+                "ASOSBSA",
+                "A320 Engineering",
+                "ASOSBS",
+            ),
+        )
+
+    # ---------------------------------------------------------
+    # JOIN in ASOSBSA
+    # ---------------------------------------------------------
+
+    add_event(
+        PersonEvent(
+            id=None,
+            corp_id="D10005",
+            effective_date=date(2022, 1, 1),
+            event_type=EventType.JOIN,
+            job_code="JOB_A",
+            location_code="HAM",
+            department_siglum="ASOSBSA",
+            employment_status=EmploymentStatus.PERMANENT,
+            fte=0.8,
+        )
+    )
+
+    # ---------------------------------------------------------
+    # Transfer von ASOSBSA nach ASOSBL
+    # ---------------------------------------------------------
+
+    add_event(
+        PersonEvent(
+            id=None,
+            corp_id="D10005",
+            effective_date=date(2023, 1, 1),
+            event_type=EventType.TRANSFER,
+            department_siglum="ASOSBL",
+        )
+    )
+
+    # ---------------------------------------------------------
+    # Filter auf ASOSB
+    # ---------------------------------------------------------
+
+    result = get_workforce_movement_summary(
+        from_date=date(2023, 1, 1),
+        to_date=date(2023, 12, 31),
+        department_siglum="ASOSB",
+    )
+
+    # Person verlässt den ASOSB-Baum:
+    # ASOSBSA → ASOSBL
+    assert result.transfers_out_headcount == 1
+    assert result.transfers_out_fte == 0.8
+
+    # Person bleibt innerhalb des ASOSB-Baums:
+    # ASOSBL ist ebenfalls Kind von ASOSB
+    assert result.transfers_in_headcount == 1
+    assert result.transfers_in_fte == 0.8
+
+
+def test_workforce_movement_summary_department_filter_in_out(
+    test_database,
+):
+    with get_connection() as connection:
+        connection.execute(
+            """
+            INSERT INTO person (
+                corp_id,
+                first_name,
+                last_name
+            )
+            VALUES (?, ?, ?)
+            """,
+            ("D10006", "Anna", "Muster"),
+        )
+
+        connection.execute(
+            """
+            INSERT INTO department (
+                siglum,
+                name,
+                parent_siglum
+            )
+            VALUES (?, ?, ?)
+            """,
+            (
+                "ASOSBSA",
+                "A320 Engineering",
+                "ASOSBS",
+            ),
+        )
+
+        connection.execute(
+            """
+            INSERT INTO department (
+                siglum,
+                name,
+                parent_siglum
+            )
+            VALUES (?, ?, ?)
+            """,
+            (
+                "EXT",
+                "External Department",
+                None,
+            ),
+        )
+
+    # ---------------------------------------------------------
+    # JOIN außerhalb des ASOSB-Baums
+    # ---------------------------------------------------------
+
+    add_event(
+        PersonEvent(
+            id=None,
+            corp_id="D10006",
+            effective_date=date(2022, 1, 1),
+            event_type=EventType.JOIN,
+            job_code="JOB_A",
+            location_code="HAM",
+            department_siglum="EXT",
+            employment_status=EmploymentStatus.PERMANENT,
+            fte=0.5,
+        )
+    )
+
+    # ---------------------------------------------------------
+    # EXT → ASOSBSA
+    # ---------------------------------------------------------
+
+    add_event(
+        PersonEvent(
+            id=None,
+            corp_id="D10006",
+            effective_date=date(2023, 1, 1),
+            event_type=EventType.TRANSFER,
+            department_siglum="ASOSBSA",
+        )
+    )
+
+    result = get_workforce_movement_summary(
+        from_date=date(2023, 1, 1),
+        to_date=date(2023, 12, 31),
+        department_siglum="ASOSB",
+    )
+
+    assert result.transfers_in_headcount == 1
+    assert result.transfers_in_fte == 0.5
+
+    assert result.transfers_out_headcount == 0
+    assert result.transfers_out_fte == 0.0
+
+
+def test_workforce_movement_summary_respects_date_range(
+    test_database,
+):
+    with get_connection() as connection:
+        connection.execute(
+            """
+            INSERT INTO person (
+                corp_id,
+                first_name,
+                last_name
+            )
+            VALUES (?, ?, ?)
+            """,
+            ("D10007", "Max", "Mustermann"),
+        )
+
+        connection.execute(
+            """
+            INSERT INTO department (
+                siglum,
+                name,
+                parent_siglum
+            )
+            VALUES (?, ?, ?)
+            """,
+            (
+                "EXT2",
+                "External Department 2",
+                None,
+            ),
+        )
+
+    # ---------------------------------------------------------
+    # JOIN außerhalb des ASOSB-Baums
+    # ---------------------------------------------------------
+
+    add_event(
+        PersonEvent(
+            id=None,
+            corp_id="D10007",
+            effective_date=date(2020, 1, 1),
+            event_type=EventType.JOIN,
+            job_code="JOB_A",
+            location_code="HAM",
+            department_siglum="EXT2",
+            employment_status=EmploymentStatus.PERMANENT,
+            fte=1.0,
+        )
+    )
+
+    # ---------------------------------------------------------
+    # 2021: Eintritt in ASOSB
+    # ---------------------------------------------------------
+
+    add_event(
+        PersonEvent(
+            id=None,
+            corp_id="D10007",
+            effective_date=date(2021, 1, 1),
+            event_type=EventType.TRANSFER,
+            department_siglum="ASOSB",
+        )
+    )
+
+    # ---------------------------------------------------------
+    # 2022: zurück nach außen
+    # ---------------------------------------------------------
+
+    add_event(
+        PersonEvent(
+            id=None,
+            corp_id="D10007",
+            effective_date=date(2022, 1, 1),
+            event_type=EventType.TRANSFER,
+            department_siglum="EXT2",
+        )
+    )
+
+    # ---------------------------------------------------------
+    # 2023: wieder in ASOSB
+    # ---------------------------------------------------------
+
+    add_event(
+        PersonEvent(
+            id=None,
+            corp_id="D10007",
+            effective_date=date(2023, 1, 1),
+            event_type=EventType.TRANSFER,
+            department_siglum="ASOSB",
+        )
+    )
+
+    # ---------------------------------------------------------
+    # Analysezeitraum: nur 2022
+    # ---------------------------------------------------------
+
+    result = get_workforce_movement_summary(
+        from_date=date(2022, 1, 1),
+        to_date=date(2022, 12, 31),
+        department_siglum="ASOSB",
+    )
+
+    assert result.transfers_in_headcount == 0
+    assert result.transfers_in_fte == 0.0
+
+    assert result.transfers_out_headcount == 1
+    assert result.transfers_out_fte == 1.0
+
+
+def test_workforce_movement_summary_fte_change(
+    test_database,
+):
+    with get_connection() as connection:
+        connection.execute(
+            """
+            INSERT INTO person (
+                corp_id,
+                first_name,
+                last_name
+            )
+            VALUES (?, ?, ?)
+            """,
+            ("D10008", "Laura", "Musterfrau"),
+        )
+
+    # ---------------------------------------------------------
+    # JOIN
+    # ---------------------------------------------------------
+
+    add_event(
+        PersonEvent(
+            id=None,
+            corp_id="D10008",
+            effective_date=date(2022, 1, 1),
+            event_type=EventType.JOIN,
+            job_code="JOB_A",
+            location_code="HAM",
+            department_siglum="ASOSB",
+            employment_status=EmploymentStatus.PERMANENT,
+            fte=0.5,
+        )
+    )
+
+    # ---------------------------------------------------------
+    # FTE Change: 0.5 → 0.8
+    # ---------------------------------------------------------
+
+    add_event(
+        PersonEvent(
+            id=None,
+            corp_id="D10008",
+            effective_date=date(2023, 1, 1),
+            event_type=EventType.FTE_CHANGE,
+            fte=0.8,
+        )
+    )
+
+    result = get_workforce_movement_summary(
+        from_date=date(2023, 1, 1),
+        to_date=date(2023, 12, 31),
+        department_siglum="ASOSB",
+    )
+
+    # FTE_CHANGE ist kein Join
+    assert result.joins_headcount == 0
+    assert result.joins_fte == 0.0
+
+    # FTE_CHANGE ist kein Exit
+    assert result.exits_headcount == 0
+    assert result.exits_fte == 0.0
+
+    # FTE_CHANGE ist kein Transfer
+    assert result.transfers_in_headcount == 0
+    assert result.transfers_in_fte == 0.0
+
+    assert result.transfers_out_headcount == 0
+    assert result.transfers_out_fte == 0.0
+
+    # FTE Change selbst
+    assert result.fte_changes_headcount == 1
+    assert result.fte_changes_fte == pytest.approx(0.3)
+
+
+def test_workforce_movement_summary_fte_change_net(
+    test_database,
+):
+    with get_connection() as connection:
+        connection.executemany(
+            """
+            INSERT INTO person (
+                corp_id,
+                first_name,
+                last_name
+            )
+            VALUES (?, ?, ?)
+            """,
+            [
+                ("D10009", "Max", "Mustermann"),
+                ("D10010", "Anna", "Musterfrau"),
+                ("D10011", "Peter", "Muster"),
+            ],
+        )
+
+    # ---------------------------------------------------------
+    # Max: 0.5 → 0.8 = +0.3
+    # ---------------------------------------------------------
+
+    add_event(
+        PersonEvent(
+            id=None,
+            corp_id="D10009",
+            effective_date=date(2022, 1, 1),
+            event_type=EventType.JOIN,
+            job_code="JOB_A",
+            location_code="HAM",
+            department_siglum="ASOSB",
+            employment_status=EmploymentStatus.PERMANENT,
+            fte=0.5,
+        )
+    )
+
+    add_event(
+        PersonEvent(
+            id=None,
+            corp_id="D10009",
+            effective_date=date(2023, 1, 1),
+            event_type=EventType.FTE_CHANGE,
+            fte=0.8,
+        )
+    )
+
+    # ---------------------------------------------------------
+    # Anna: 1.0 → 0.7 = -0.3
+    # ---------------------------------------------------------
+
+    add_event(
+        PersonEvent(
+            id=None,
+            corp_id="D10010",
+            effective_date=date(2022, 1, 1),
+            event_type=EventType.JOIN,
+            job_code="JOB_A",
+            location_code="HAM",
+            department_siglum="ASOSB",
+            employment_status=EmploymentStatus.PERMANENT,
+            fte=1.0,
+        )
+    )
+
+    add_event(
+        PersonEvent(
+            id=None,
+            corp_id="D10010",
+            effective_date=date(2023, 1, 1),
+            event_type=EventType.FTE_CHANGE,
+            fte=0.7,
+        )
+    )
+
+    # ---------------------------------------------------------
+    # Peter: 0.5 → 0.8 = +0.3
+    # ---------------------------------------------------------
+
+    add_event(
+        PersonEvent(
+            id=None,
+            corp_id="D10011",
+            effective_date=date(2022, 1, 1),
+            event_type=EventType.JOIN,
+            job_code="JOB_A",
+            location_code="HAM",
+            department_siglum="ASOSB",
+            employment_status=EmploymentStatus.PERMANENT,
+            fte=0.5,
+        )
+    )
+
+    add_event(
+        PersonEvent(
+            id=None,
+            corp_id="D10011",
+            effective_date=date(2023, 1, 1),
+            event_type=EventType.FTE_CHANGE,
+            fte=0.8,
+        )
+    )
+
+    # ---------------------------------------------------------
+    # Analyse
+    # ---------------------------------------------------------
+
+    result = get_workforce_movement_summary(
+        from_date=date(2023, 1, 1),
+        to_date=date(2023, 12, 31),
+        department_siglum="ASOSB",
+    )
+
+    assert result.fte_changes_headcount == 3
+    assert result.fte_changes_fte == pytest.approx(0.3)
