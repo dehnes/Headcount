@@ -4,3 +4,10 @@ __pycache__/
 *.pyc
 
 data/*.db
+logs/
+
+# Local configuration and Django database
+.env
+db.sqlite3
+headcount.sqlite3
+staticfiles/

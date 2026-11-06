@@ -2,11 +2,14 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Headcount",
+      "name": "Django: Run Server",
       "type": "debugpy",
       "request": "launch",
-      "module": "app.main",
-      "cwd": "${workspaceFolder}",
+      "program": "${workspaceFolder}/backend/manage.py",
+      "python": "${workspaceFolder}/backend/.venv/bin/python",
+      "args": ["runserver"],
+      "django": true,
+      "cwd": "${workspaceFolder}/backend",
       "console": "integratedTerminal"
     }
   ]
